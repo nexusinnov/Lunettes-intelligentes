@@ -1,0 +1,134 @@
+import cv2
+import numpy as np
+import argostranslate.package
+import argostranslate.translate
+from PIL import Image, ImageDraw, ImageFont
+import pyttsx3
+
+# Dictionnaire contenant les plages HSV de différentes couleurs en anglais
+colors = {
+    'White': [(0, 0, 200), (255, 30, 255)],
+    'Black': [(0, 0, 0), (255, 30, 50)],
+    'Red': [(160, 100, 100), (180, 255, 255)],
+    'Yellow': ([15, 150, 20], [35, 255, 255]),
+    'Blue': ([90, 60, 0], [121, 255, 255]),
+    'Green': ([35, 50, 50], [85, 255, 255]),
+    'Orange': ([10, 100, 20], [20, 255, 255]),
+    'Brown': ([10, 100, 20], [30, 255, 150]),
+    'Pink': ([140, 50, 50], [165, 255, 255]),
+    'Purple': ([125, 100, 50], [155, 255, 255])
+}
+
+# Initialiser le moteur pyttsx3
+engine = pyttsx3.init()
+
+# Fonction pour dessiner du texte en utilisant Pillow
+def draw_text_with_pillow(image, text, position, font_path='arial.ttf', font_size=20, color=(0, 255, 0)):
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_image)
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        font = ImageFont.load_default()
+    draw.text(position, text, font=font, fill=color)
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+# Fonction pour détecter les couleurs dans l'image
+def detect_color(frame, color_name, lower, upper):
+    # Convertir l'image de BGR à HSV
+    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    
+    # Appliquer le masque pour la couleur spécifique
+    mask = cv2.inRange(hsv_frame, np.array(lower), np.array(upper))
+    
+    # Trouver les contours dans le masque
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Parcourir les contours trouvés
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > 500:  # Filtrer les petits contours
+            # Obtenir les coordonnées du rectangle englobant
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Dessiner un rectangle autour de la couleur détectée
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            
+            # Traduire le nom de la couleur en français ou en arabe
+            translated_color_name = argostranslate.translate.translate(color_name, from_code, to_code)
+            
+            # Afficher le nom de la couleur traduit au-dessus du rectangle
+            frame = draw_text_with_pillow(frame, translated_color_name, (x, y - 20))
+            
+            # Lire le nom de la couleur traduit à haute voix
+            engine.say(translated_color_name)
+            engine.runAndWait()
+            
+            # Imprimer les coordonnées de la couleur détectée dans la console
+            print(f"{translated_color_name} detected at x={x}, y={y}")
+    
+    return frame
+
+def set_language(lang_code):
+    global from_code, to_code
+    from_code = "en"
+    to_code = lang_code
+
+def capture_image_from_webcam():
+    global captured_image
+    # Ouvrir la webcam
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: Unable to open the camera.")
+        return
+
+    # Capturer une image de la webcam
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        print("Error: Unable to capture the image.")
+        return
+    
+    captured_image = frame
+    cv2.imshow('Captured Image', captured_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+def detect_colors_in_image():
+    if captured_image is None:
+        print("No image captured.")
+        return
+
+    # Créer une copie de l'image capturée pour la détection des couleurs
+    frame_with_detections = captured_image.copy()
+
+    # Détecter les couleurs définies dans le dictionnaire et traduire les noms de couleurs
+    for color_name, (lower, upper) in colors.items():
+        frame_with_detections = detect_color(frame_with_detections, color_name, lower, upper)
+
+    # Afficher l'image avec la détection des couleurs
+    cv2.imshow('Detection de couleurs', frame_with_detections)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Télécharger et installer le package de traduction pour la langue cible
+from_code = "en"
+argostranslate.package.update_package_index()
+available_packages = argostranslate.package.get_available_packages()
+package_to_install = next(
+    filter(
+        lambda x: x.from_code == from_code and x.to_code == "fr", available_packages
+    )
+)
+argostranslate.package.install_from_path(package_to_install.download())
+
+captured_image = None
+
+# Définir la langue de traduction (français dans ce cas)
+set_language("fr")
+
+# Capturer une image de la webcam
+capture_image_from_webcam()
+
+# Détecter les couleurs dans l'image capturée
+detect_colors_in_image()
