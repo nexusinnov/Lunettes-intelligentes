@@ -1,0 +1,111 @@
+import cv2
+import numpy as np
+import argostranslate.package
+import argostranslate.translate
+from PIL import Image, ImageDraw, ImageFont
+
+# Dictionnaire contenant les plages HSV de différentes couleurs
+colors = {
+    'الابيض': [(0, 0, 200), (255, 30, 255)],
+    'أسود': [(0, 0, 0), (255, 30, 50)],
+    'أحمر': [(160, 100, 100), (180, 255, 255)],
+    'أصفر': ([15, 150, 20], [35, 255, 255]),
+    'أزرق': ([90, 60, 0], [121, 255, 255]),
+    'أخضر': ([35, 50, 50], [85, 255, 255]),
+    'البرتقالي': ([10, 100, 20], [20, 255, 255]),
+    'بني': ([10, 100, 20], [30, 255, 150]),
+    'القرنفل': ([140, 50, 50], [165, 255, 255]),
+    'أرجواني': ([125, 100, 50], [155, 255, 255])
+}
+
+# Fonction pour dessiner du texte en utilisant Pillow
+def draw_text_with_pillow(image, text, position, font_path='arial.ttf', font_size=20, color=(0, 255, 0)):
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_image)
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        font = ImageFont.load_default()
+    draw.text(position, text, font=font, fill=color)
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+# Fonction pour détecter les couleurs dans l'image
+def detect_color(frame, color_name, lower, upper):
+    # Convertir l'image de BGR à HSV
+    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    
+    # Appliquer le masque pour la couleur spécifique
+    mask = cv2.inRange(hsv_frame, np.array(lower), np.array(upper))
+    
+    # Trouver les contours dans le masque
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Parcourir les contours trouvés
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > 500:  # Filtrer les petits contours
+            # Obtenir les coordonnées du rectangle englobant
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Dessiner un rectangle autour de la couleur détectée
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            
+            # Traduire le nom de la couleur en français ou en anglais
+            translated_color_name = argostranslate.translate.translate(color_name, from_code, to_code)
+            
+            # Afficher le nom de la couleur traduit au-dessus du rectangle
+            frame = draw_text_with_pillow(frame, translated_color_name, (x, y - 20))
+            
+            # Imprimer les coordonnées de la couleur détectée dans la console
+            print(f"{translated_color_name} détecté à x={x}, y={y}")
+    
+    return frame
+
+def set_language(lang_code):
+    global from_code, to_code
+    from_code = "ar"
+    to_code = lang_code
+
+def capture_and_detect():
+    # Capturer à partir de la webcam
+    cap = cv2.VideoCapture(0)
+    
+    # Capture une seule image
+    ret, frame = cap.read()
+    
+    # Libérer la capture de la webcam
+    cap.release()
+    
+    if not ret:
+        print("Erreur : Impossible de capturer l'image.")
+        return
+
+    # Afficher l'image capturée
+    cv2.imshow('Image capturée', frame)
+    
+    # Détecter les couleurs dans l'image capturée
+    for color_name, (lower, upper) in colors.items():
+        frame = detect_color(frame, color_name, lower, upper)
+    
+    # Afficher l'image avec la détection des couleurs
+    cv2.imshow('Detection de couleurs', frame)
+    
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Télécharger et installer le package de traduction pour la langue cible
+from_code = "ar"
+argostranslate.package.update_package_index()
+available_packages = argostranslate.package.get_available_packages()
+package_to_install = next(
+    filter(
+        lambda x: x.from_code == from_code and x.to_code == "en", available_packages
+    )
+)
+argostranslate.package.install_from_path(package_to_install.download())
+
+# Définir la langue de traduction (français dans ce cas)
+set_language("fr")
+
+# Capturer une image et détecter les couleurs
+capture_and_detect()
